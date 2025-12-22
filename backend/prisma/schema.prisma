@@ -17,27 +17,100 @@ model User {
   @@map("users")
 }
 
-model Market {
-  id                     String          @id @default(uuid())
-  polymarketConditionId  String          @map("polymarket_condition_id")
-  polymarketTokenIdYes   String          @map("polymarket_token_id_yes")
-  polymarketTokenIdNo    String          @map("polymarket_token_id_no")
-  question               String
-  description            String?
-  image                  String?
-  category               String?
-  endDate                DateTime?       @map("end_date")
-  resolved               Boolean         @default(false)
-  outcome                String?
-  volume                 Decimal         @default(0) @db.Decimal(18, 6)
-  liquidity              Decimal         @default(0) @db.Decimal(18, 6)
-  createdAt              DateTime        @default(now()) @map("created_at")
-  updatedAt              DateTime        @updatedAt @map("updated_at")
-  positions              Position[]
-  orders                 Order[]
-  hedgePositions         HedgePosition[]
-  priceHistory           PriceHistory[]
+model Category {
+  id          String   @id @default(uuid())
+  slug        String   @unique
+  name        String
+  icon        String?
+  marketCount Int      @default(0) @map("market_count")
+  createdAt   DateTime @default(now()) @map("created_at")
+  events      Event[]
+  markets     Market[]
 
+  @@map("categories")
+}
+
+model Event {
+  id           String    @id @default(uuid())
+  polymarketId String?   @unique @map("polymarket_id")
+  slug         String    @unique
+  title        String
+  description  String?
+  image        String?
+  categoryId   String?   @map("category_id")
+  category     Category? @relation(fields: [categoryId], references: [id])
+  startDate    DateTime? @map("start_date")
+  endDate      DateTime? @map("end_date")
+  active       Boolean   @default(true)
+  featured     Boolean   @default(false)
+  marketCount  Int       @default(0) @map("market_count")
+  totalVolume  Decimal   @default(0) @map("total_volume") @db.Decimal(18, 2)
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  markets      Market[]
+
+  @@map("events")
+}
+
+model Market {
+  id                    String          @id @default(uuid())
+  polymarketConditionId String          @unique @map("polymarket_condition_id")
+  polymarketTokenIdYes  String          @map("polymarket_token_id_yes")
+  polymarketTokenIdNo   String          @map("polymarket_token_id_no")
+
+  // Relations
+  eventId               String?         @map("event_id")
+  event                 Event?          @relation(fields: [eventId], references: [id])
+  categoryId            String?         @map("category_id")
+  category              Category?       @relation(fields: [categoryId], references: [id])
+
+  // Market details
+  question              String
+  description           String?
+  image                 String?
+  slug                  String?
+
+  // Timing
+  startDate             DateTime?       @map("start_date")
+  endDate               DateTime?       @map("end_date")
+
+  // State
+  active                Boolean         @default(true)
+  closed                Boolean         @default(false)
+  resolved              Boolean         @default(false)
+  outcome               String?
+
+  // Polymarket prices
+  yesPrice              Decimal         @default(0.5) @map("yes_price") @db.Decimal(10, 6)
+  noPrice               Decimal         @default(0.5) @map("no_price") @db.Decimal(10, 6)
+
+  // YOUR prices (5% less - what users see)
+  yourYesPrice          Decimal?        @map("your_yes_price") @db.Decimal(10, 6)
+  yourNoPrice           Decimal?        @map("your_no_price") @db.Decimal(10, 6)
+
+  // Stats
+  volume24h             Decimal         @default(0) @map("volume_24h") @db.Decimal(18, 2)
+  totalVolume           Decimal         @default(0) @map("total_volume") @db.Decimal(18, 2)
+  liquidity             Decimal         @default(0) @db.Decimal(18, 2)
+
+  // Metadata
+  resolutionSource      String?         @map("resolution_source")
+  tags                  String[]
+
+  // Timestamps
+  createdAt             DateTime        @default(now()) @map("created_at")
+  updatedAt             DateTime        @updatedAt @map("updated_at")
+
+  // Relations
+  positions             Position[]
+  orders                Order[]
+  hedgePositions        HedgePosition[]
+  priceHistory          PriceHistory[]
+
+  @@index([categoryId])
+  @@index([eventId])
+  @@index([active, resolved])
+  @@index([totalVolume(sort: Desc)])
   @@map("markets")
 }
 
@@ -58,23 +131,23 @@ model Position {
 }
 
 model Order {
-  id                 String         @id @default(uuid())
-  userId             String         @map("user_id")
-  marketId           String         @map("market_id")
-  side               String
-  outcome            String
-  size               Decimal        @db.Decimal(18, 6)
-  price              Decimal        @db.Decimal(10, 6)
-  spreadApplied      Decimal        @map("spread_applied") @db.Decimal(10, 6)
-  effectivePrice     Decimal        @map("effective_price") @db.Decimal(10, 6)
-  status             String         @default("PENDING")
-  polymarketOrderId  String?        @map("polymarket_order_id")
-  cronosTxHash       String?        @map("cronos_tx_hash")
-  createdAt          DateTime       @default(now()) @map("created_at")
-  filledAt           DateTime?      @map("filled_at")
-  user               User           @relation(fields: [userId], references: [id])
-  market             Market         @relation(fields: [marketId], references: [id])
-  spreadProfit       SpreadProfit?
+  id                String        @id @default(uuid())
+  userId            String        @map("user_id")
+  marketId          String        @map("market_id")
+  side              String
+  outcome           String
+  size              Decimal       @db.Decimal(18, 6)
+  price             Decimal       @db.Decimal(10, 6)
+  spreadApplied     Decimal       @map("spread_applied") @db.Decimal(10, 6)
+  effectivePrice    Decimal       @map("effective_price") @db.Decimal(10, 6)
+  status            String        @default("PENDING")
+  polymarketOrderId String?       @map("polymarket_order_id")
+  cronosTxHash      String?       @map("cronos_tx_hash")
+  createdAt         DateTime      @default(now()) @map("created_at")
+  filledAt          DateTime?     @map("filled_at")
+  user              User          @relation(fields: [userId], references: [id])
+  market            Market        @relation(fields: [marketId], references: [id])
+  spreadProfit      SpreadProfit?
 
   @@map("orders")
 }
@@ -107,9 +180,10 @@ model PriceHistory {
   marketId  String   @map("market_id")
   yesPrice  Decimal  @map("yes_price") @db.Decimal(10, 6)
   noPrice   Decimal  @map("no_price") @db.Decimal(10, 6)
+  volume    Decimal? @db.Decimal(18, 2)
   timestamp DateTime @default(now())
   market    Market   @relation(fields: [marketId], references: [id])
 
-  @@index([marketId, timestamp])
+  @@index([marketId, timestamp(sort: Desc)])
   @@map("price_history")
 }
