@@ -1,0 +1,115 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String     @id @default(uuid())
+  cronosAddress String     @unique @map("cronos_address")
+  createdAt     DateTime   @default(now()) @map("created_at")
+  positions     Position[]
+  orders        Order[]
+
+  @@map("users")
+}
+
+model Market {
+  id                     String          @id @default(uuid())
+  polymarketConditionId  String          @map("polymarket_condition_id")
+  polymarketTokenIdYes   String          @map("polymarket_token_id_yes")
+  polymarketTokenIdNo    String          @map("polymarket_token_id_no")
+  question               String
+  description            String?
+  image                  String?
+  category               String?
+  endDate                DateTime?       @map("end_date")
+  resolved               Boolean         @default(false)
+  outcome                String?
+  volume                 Decimal         @default(0) @db.Decimal(18, 6)
+  liquidity              Decimal         @default(0) @db.Decimal(18, 6)
+  createdAt              DateTime        @default(now()) @map("created_at")
+  updatedAt              DateTime        @updatedAt @map("updated_at")
+  positions              Position[]
+  orders                 Order[]
+  hedgePositions         HedgePosition[]
+  priceHistory           PriceHistory[]
+
+  @@map("markets")
+}
+
+model Position {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  marketId  String   @map("market_id")
+  side      String
+  size      Decimal  @db.Decimal(18, 6)
+  avgPrice  Decimal  @map("avg_price") @db.Decimal(10, 6)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  user      User     @relation(fields: [userId], references: [id])
+  market    Market   @relation(fields: [marketId], references: [id])
+
+  @@unique([userId, marketId, side])
+  @@map("positions")
+}
+
+model Order {
+  id                 String         @id @default(uuid())
+  userId             String         @map("user_id")
+  marketId           String         @map("market_id")
+  side               String
+  outcome            String
+  size               Decimal        @db.Decimal(18, 6)
+  price              Decimal        @db.Decimal(10, 6)
+  spreadApplied      Decimal        @map("spread_applied") @db.Decimal(10, 6)
+  effectivePrice     Decimal        @map("effective_price") @db.Decimal(10, 6)
+  status             String         @default("PENDING")
+  polymarketOrderId  String?        @map("polymarket_order_id")
+  cronosTxHash       String?        @map("cronos_tx_hash")
+  createdAt          DateTime       @default(now()) @map("created_at")
+  filledAt           DateTime?      @map("filled_at")
+  user               User           @relation(fields: [userId], references: [id])
+  market             Market         @relation(fields: [marketId], references: [id])
+  spreadProfit       SpreadProfit?
+
+  @@map("orders")
+}
+
+model SpreadProfit {
+  id        String   @id @default(uuid())
+  orderId   String   @unique @map("order_id")
+  amount    Decimal  @db.Decimal(18, 6)
+  createdAt DateTime @default(now()) @map("created_at")
+  order     Order    @relation(fields: [orderId], references: [id])
+
+  @@map("spread_profits")
+}
+
+model HedgePosition {
+  id        String   @id @default(uuid())
+  marketId  String   @map("market_id")
+  side      String
+  size      Decimal  @db.Decimal(18, 6)
+  avgPrice  Decimal  @map("avg_price") @db.Decimal(10, 6)
+  updatedAt DateTime @updatedAt @map("updated_at")
+  market    Market   @relation(fields: [marketId], references: [id])
+
+  @@unique([marketId, side])
+  @@map("hedge_positions")
+}
+
+model PriceHistory {
+  id        String   @id @default(uuid())
+  marketId  String   @map("market_id")
+  yesPrice  Decimal  @map("yes_price") @db.Decimal(10, 6)
+  noPrice   Decimal  @map("no_price") @db.Decimal(10, 6)
+  timestamp DateTime @default(now())
+  market    Market   @relation(fields: [marketId], references: [id])
+
+  @@index([marketId, timestamp])
+  @@map("price_history")
+}
