@@ -4,6 +4,7 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import { createServer } from 'http';
 import { PrismaClient } from '@prisma/client';
+import Redis from 'ioredis';
 
 import { config } from './config';
 import { createMarketRoutes } from './api/routes/markets';
@@ -14,19 +15,33 @@ import { MarketSyncService } from './services/MarketSyncService';
 import { OrderRouterService } from './services/OrderRouterService';
 import { PositionManagerService } from './services/PositionManagerService';
 import { SettlementService } from './services/SettlementService';
-import { polymarketWsClient } from './polymarket/WebSocketClient';
+import { IncrementalSyncService } from './services/IncrementalSyncService';
+import { RealtimePriceService } from './services/RealtimePriceService';
+import { BulkSyncService } from './services/BulkSyncService';
 
-// Initialize Prisma client
+// Initialize clients
 const prisma = new PrismaClient();
+const redis = new Redis(config.redisUrl, {
+  maxRetriesPerRequest: 3,
+  retryStrategy: (times) => {
+    if (times > 3) return null;
+    return Math.min(times * 100, 3000);
+  },
+  lazyConnect: true,
+});
 
 // Initialize Express app
 const app = express();
 const httpServer = createServer(app);
 
 // Middleware
-app.use(helmet());
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
+}));
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+  origin: config.nodeEnv === 'production'
+    ? process.env.FRONTEND_URL
+    : ['http://localhost:3000', 'http://127.0.0.1:3000'],
   credentials: true,
 }));
 app.use(express.json());
@@ -36,6 +51,8 @@ const limiter = rateLimit({
   windowMs: config.rateLimit.windowMs,
   max: config.rateLimit.maxRequests,
   message: { success: false, error: 'Too many requests, please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
 });
 app.use('/api/', limiter);
 
@@ -44,6 +61,8 @@ const marketSyncService = new MarketSyncService(prisma);
 const positionManager = new PositionManagerService(prisma);
 const orderRouter = new OrderRouterService(prisma);
 const settlementService = new SettlementService(prisma, positionManager);
+const incrementalSync = new IncrementalSyncService(prisma, redis);
+const bulkSync = new BulkSyncService(prisma, redis);
 
 // Initialize WebSocket server
 const wsServer = new WebSocketServer(
@@ -53,21 +72,88 @@ const wsServer = new WebSocketServer(
   settlementService
 );
 
+// Initialize real-time price service
+const realtimePriceService = new RealtimePriceService(prisma, redis, wsServer.getIO());
+
 // API Routes
 app.use('/api/markets', createMarketRoutes(marketSyncService));
 app.use('/api/orders', createOrderRoutes(orderRouter));
 app.use('/api/positions', createPositionRoutes(positionManager));
 
 // Health check endpoint
-app.get('/health', (_req, res) => {
-  res.json({
-    status: 'ok',
+app.get('/health', async (_req, res) => {
+  const redisOk = redis.status === 'ready';
+  let dbOk = false;
+
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    dbOk = true;
+  } catch {
+    dbOk = false;
+  }
+
+  const status = redisOk && dbOk ? 'healthy' : 'degraded';
+  const statusCode = status === 'healthy' ? 200 : 503;
+
+  res.status(statusCode).json({
+    status,
     timestamp: new Date().toISOString(),
     services: {
-      database: 'connected',
-      polymarketWs: polymarketWsClient.getConnectionStatus() ? 'connected' : 'disconnected',
+      database: dbOk ? 'connected' : 'disconnected',
+      redis: redisOk ? 'connected' : 'disconnected',
     },
   });
+});
+
+// Stats endpoint
+app.get('/api/stats', async (_req, res) => {
+  try {
+    const [marketCount, activeMarkets, categories] = await Promise.all([
+      prisma.market.count(),
+      prisma.market.count({ where: { active: true } }),
+      prisma.category.findMany({ orderBy: { marketCount: 'desc' } }),
+    ]);
+
+    res.json({
+      success: true,
+      data: {
+        totalMarkets: marketCount,
+        activeMarkets,
+        categories: categories.map(c => ({
+          name: c.name,
+          slug: c.slug,
+          icon: c.icon,
+          count: c.marketCount,
+        })),
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Failed to fetch stats' });
+  }
+});
+
+// Admin sync endpoint
+app.post('/api/admin/sync', async (req, res) => {
+  const authHeader = req.headers.authorization;
+  const expectedToken = process.env.ADMIN_TOKEN;
+
+  if (expectedToken && authHeader !== `Bearer ${expectedToken}`) {
+    return res.status(401).json({ success: false, error: 'Unauthorized' });
+  }
+
+  try {
+    const { type } = req.body as { type?: string };
+
+    if (type === 'full') {
+      bulkSync.fullSync().catch(console.error);
+      res.json({ success: true, message: 'Full sync started in background' });
+    } else {
+      await incrementalSync.syncPrices();
+      res.json({ success: true, message: 'Price sync complete' });
+    }
+  } catch (error) {
+    res.status(500).json({ success: false, error: 'Sync failed' });
+  }
 });
 
 // API documentation endpoint
@@ -75,109 +161,110 @@ app.get('/api', (_req, res) => {
   res.json({
     name: 'Cronos Prediction Market API',
     version: '1.0.0',
+    description: 'Polymarket mirror with 5% spread',
     endpoints: {
       markets: {
-        'GET /api/markets': 'Get all markets',
-        'GET /api/markets/:id': 'Get market by ID',
-        'GET /api/markets/:id/orderbook': 'Get order book for market',
-        'GET /api/markets/:id/price-history': 'Get price history',
-        'POST /api/markets/sync': 'Trigger market sync (admin)',
+        'GET /api/markets': 'List all markets',
+        'GET /api/markets/:id': 'Get market with prices',
+        'GET /api/markets/:id/orderbook': 'Get order book',
+        'GET /api/markets/:id/price-history': 'Price history for charts',
       },
       orders: {
-        'POST /api/orders': 'Place a new order',
-        'GET /api/orders/:id': 'Get order by ID',
-        'DELETE /api/orders/:id': 'Cancel an order',
-        'GET /api/orders/user/:userId': 'Get user orders',
-        'POST /api/orders/quote': 'Get price quote with spread',
-        'GET /api/orders/spread/config': 'Get spread configuration',
-        'GET /api/orders/profits': 'Get total spread profits (admin)',
+        'POST /api/orders': 'Place order',
+        'GET /api/orders/:id': 'Get order status',
+        'DELETE /api/orders/:id': 'Cancel order',
+        'POST /api/orders/quote': 'Get quote with spread',
       },
       positions: {
-        'GET /api/positions/user/:userId': 'Get user positions',
-        'GET /api/positions/user/:userId/summary': 'Get portfolio summary',
-        'GET /api/positions/market/:marketId': 'Get market positions',
-        'GET /api/positions/:userId/:marketId/:side': 'Get specific position',
-        'GET /api/positions/:userId/:marketId/:side/exit-value': 'Calculate exit value',
-        'GET /api/positions/hedge': 'Get hedge positions (admin)',
-        'GET /api/positions/hedge/exposure': 'Get total hedge exposure (admin)',
+        'GET /api/positions/user/:userId': 'User positions',
+        'GET /api/positions/user/:userId/summary': 'Portfolio summary',
       },
-      websocket: {
-        'subscribe_market': 'Subscribe to market price updates',
-        'unsubscribe_market': 'Unsubscribe from market updates',
-        'subscribe_user': 'Subscribe to user order/position updates',
-        'unsubscribe_user': 'Unsubscribe from user updates',
+      admin: {
+        'POST /api/admin/sync': 'Trigger sync (requires ADMIN_TOKEN)',
       },
     },
   });
 });
 
-// Error handling middleware
+// Error handling
 app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error('Unhandled error:', err);
   res.status(500).json({
     success: false,
-    error: 'Internal server error',
+    error: config.nodeEnv === 'production' ? 'Internal server error' : err.message,
   });
 });
 
 // 404 handler
 app.use((_req, res) => {
-  res.status(404).json({
-    success: false,
-    error: 'Not found',
-  });
+  res.status(404).json({ success: false, error: 'Not found' });
 });
 
-// Startup function
+// Startup
 async function start() {
   try {
+    console.log('═══════════════════════════════════════════');
+    console.log('  CRONOS PREDICTION MARKET');
+    console.log('═══════════════════════════════════════════');
+
     // Connect to database
     await prisma.$connect();
-    console.log('Connected to database');
+    console.log('✓ PostgreSQL connected');
 
-    // Connect to Polymarket WebSocket
-    try {
-      await polymarketWsClient.connect();
-      console.log('Connected to Polymarket WebSocket');
-    } catch (error) {
-      console.warn('Failed to connect to Polymarket WebSocket:', error);
-      console.log('Continuing without real-time Polymarket data...');
+    // Connect to Redis
+    await redis.connect();
+    console.log('✓ Redis connected');
+
+    // Check market count
+    const marketCount = await prisma.market.count();
+    if (marketCount === 0) {
+      console.log('');
+      console.log('⚠ No markets in database!');
+      console.log('  Run: npm run sync:full');
+      console.log('');
+    } else {
+      console.log(`✓ ${marketCount} markets loaded`);
     }
 
-    // Start market sync service
-    await marketSyncService.start();
+    // Start services
+    await realtimePriceService.start();
+    console.log('✓ Real-time prices started');
 
-    // Start settlement service
+    incrementalSync.start(30000);
+    console.log('✓ Incremental sync started (30s)');
+
     settlementService.start();
+    console.log('✓ Settlement service started');
 
-    // Start HTTP server
+    // Start server
     httpServer.listen(config.port, () => {
-      console.log(`Server running on port ${config.port}`);
-      console.log(`Environment: ${config.nodeEnv}`);
-      console.log(`API documentation: http://localhost:${config.port}/api`);
-      console.log(`Health check: http://localhost:${config.port}/health`);
+      console.log('');
+      console.log('═══════════════════════════════════════════');
+      console.log(`  Listening on port ${config.port}`);
+      console.log(`  Environment: ${config.nodeEnv}`);
+      console.log('═══════════════════════════════════════════');
     });
   } catch (error) {
-    console.error('Failed to start server:', error);
+    console.error('Startup failed:', error);
     process.exit(1);
   }
 }
 
 // Graceful shutdown
-async function shutdown() {
-  console.log('Shutting down...');
+async function shutdown(signal: string) {
+  console.log(`\n${signal} received, shutting down...`);
 
-  marketSyncService.stop();
+  realtimePriceService.stop();
+  incrementalSync.stop();
   settlementService.stop();
-  polymarketWsClient.disconnect();
 
+  await redis.quit();
   await prisma.$disconnect();
 
   process.exit(0);
 }
 
-process.on('SIGTERM', shutdown);
-process.on('SIGINT', shutdown);
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
 
-// Start the server
 start();
