@@ -1,6 +1,6 @@
 import Head from "next/head";
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { MarketCard } from "../components/MarketCard";
 import MarketTable from "../components/MarketTable";
 import Navbar from "../components/Navbar";
 import GlobalStats from "../components/GlobalStats";
@@ -17,35 +17,15 @@ export interface MarketProps {
   totalNo: string;
 }
 
-// View toggle icons
-const GridIcon = () => (
-  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
-  </svg>
-);
-
-const ListIcon = () => (
-  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
-  </svg>
-);
-
-const SearchIcon = () => (
-  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-  </svg>
-);
-
 export default function Home() {
   const { polymarket, account, loadWeb3, loading } = useData();
   const [markets, setMarkets] = useState<MarketProps[]>([]);
-  const [searchQuery, setSearchQuery] = useState("");
   const [activeCategory, setActiveCategory] = useState("All Markets");
-  const [sortBy, setSortBy] = useState("Volume");
-  const [viewMode, setViewMode] = useState<"grid" | "table">("grid");
+  const [currency, setCurrency] = useState("USD");
+  const [categoryFilter, setCategoryFilter] = useState("All categories");
   const [isLoading, setIsLoading] = useState(true);
 
-  const categories = ["All Markets", "Crypto", "Politics", "Sports", "Entertainment", "Technology"];
+  const categories = ["All Markets", "Crypto", "Politics", "Sports", "Entertainment", "Technology", "Gainers", "Losers"];
 
   const getMarkets = useCallback(async () => {
     try {
@@ -79,199 +59,249 @@ export default function Home() {
     });
   }, [loading]);
 
-  // Filter markets based on search
-  const filteredMarkets = markets.filter((market) =>
-    market.title.toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
   return (
-    <div className="min-h-screen bg-dark-900">
+    <div className="min-h-screen bg-[#080d1b]">
       <Head>
-        <title>PredictMarket - Prediction Markets Platform</title>
-        <meta name="description" content="Trade on the outcomes of real-world events" />
+        <title>PredictX - Prediction Markets</title>
+        <meta name="description" content="Trade on prediction markets" />
         <link rel="icon" href="/favicon.ico" />
       </Head>
 
       <Navbar />
       <GlobalStats />
 
-      <main className="container-app py-6">
+      <main className="max-w-[1400px] mx-auto px-4 sm:px-6 pb-12">
         {/* Trending Section */}
         <TrendingSection />
 
-        {/* Markets Section */}
-        <section className="mt-8">
-          {/* Section Header */}
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
-            <h2 className="text-xl font-bold text-text-primary">All Markets</h2>
+        {/* Filters Section */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 py-4 border-b border-[#1F283C]">
+          <FilterTabs
+            tabs={categories}
+            activeTab={activeCategory}
+            onTabChange={setActiveCategory}
+          />
 
-            {/* Search Bar */}
-            <div className="relative flex-1 max-w-md">
-              <div className="absolute inset-y-0 left-0 flex items-center pl-4 pointer-events-none">
-                <SearchIcon />
-              </div>
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search markets..."
-                className="input-dark pl-12"
-              />
-            </div>
-          </div>
-
-          {/* Filters Row */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-            <FilterTabs
-              tabs={categories}
-              activeTab={activeCategory}
-              onTabChange={setActiveCategory}
+          <div className="flex items-center space-x-3">
+            <DropdownFilter
+              value={currency}
+              options={["USD", "ETH", "BTC"]}
+              onChange={setCurrency}
             />
-
-            <div className="flex items-center space-x-3">
-              <DropdownFilter
-                label="Sort"
-                value={sortBy}
-                options={["Volume", "Newest", "Ending Soon", "Most Active"]}
-                onChange={setSortBy}
-              />
-
-              {/* View Toggle */}
-              <div className="flex items-center bg-dark-800 rounded-lg p-1">
-                <button
-                  onClick={() => setViewMode("grid")}
-                  className={`p-2 rounded-md transition-all duration-200 ${
-                    viewMode === "grid"
-                      ? "bg-dark-600 text-text-primary"
-                      : "text-text-muted hover:text-text-secondary"
-                  }`}
-                >
-                  <GridIcon />
-                </button>
-                <button
-                  onClick={() => setViewMode("table")}
-                  className={`p-2 rounded-md transition-all duration-200 ${
-                    viewMode === "table"
-                      ? "bg-dark-600 text-text-primary"
-                      : "text-text-muted hover:text-text-secondary"
-                  }`}
-                >
-                  <ListIcon />
-                </button>
-              </div>
-            </div>
+            <DropdownFilter
+              value={categoryFilter}
+              options={["All categories", "Crypto", "Politics", "Sports", "Entertainment"]}
+              onChange={setCategoryFilter}
+            />
           </div>
+        </div>
 
-          {/* Markets Display */}
+        {/* Markets Table */}
+        <div className="bg-[#0B1426] rounded-xl border border-[#1F283C] mt-6">
           {isLoading ? (
-            <div className="py-20">
-              <div className="flex flex-col items-center justify-center space-y-4">
-                <div className="w-12 h-12 border-4 border-dark-600 border-t-accent-blue rounded-full animate-spin" />
-                <p className="text-text-muted">Loading markets...</p>
-              </div>
-            </div>
-          ) : viewMode === "grid" ? (
-            <div className="flex flex-wrap -mx-2">
-              {filteredMarkets.length > 0 ? (
-                filteredMarkets.map((market) => (
-                  <MarketCard
-                    key={market.id}
-                    id={market.id}
-                    title={market.title}
-                    totalAmount={market.totalAmount}
-                    totalYes={market.totalYes}
-                    totalNo={market.totalNo}
-                    imageHash={market.imageHash}
-                  />
-                ))
-              ) : (
-                <div className="w-full text-center py-20">
-                  <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-dark-800 mb-4">
-                    <SearchIcon />
-                  </div>
-                  <h3 className="text-lg font-medium text-text-primary mb-2">No markets found</h3>
-                  <p className="text-text-muted">
-                    {searchQuery
-                      ? `No markets match "${searchQuery}"`
-                      : "There are no markets available yet"}
-                  </p>
-                </div>
-              )}
+            <div className="flex flex-col items-center justify-center py-20">
+              <div className="w-8 h-8 border-2 border-[#1F283C] border-t-[#1199FA] rounded-full animate-spin mb-4" />
+              <p className="text-[#7B849B] text-sm">Loading markets...</p>
             </div>
           ) : (
-            <div className="glass-card overflow-hidden">
-              <MarketTable markets={filteredMarkets} />
-            </div>
+            <MarketTable markets={markets} />
           )}
+        </div>
 
-          {/* Load More Button */}
-          {filteredMarkets.length > 0 && (
-            <div className="flex justify-center mt-8">
-              <button className="btn-secondary">
-                Load More Markets
+        {/* Bottom Promo Sections */}
+        <div className="mt-12 space-y-8">
+          {/* Balances Section */}
+          <div className="bg-[#0B1426] rounded-xl border border-[#1F283C] p-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <h3 className="text-white font-semibold text-lg">Balances</h3>
+                <p className="text-[#7B849B] text-sm mt-1">
+                  Explore your prediction portfolio with a secure wallet connection
+                </p>
+              </div>
+              <button
+                onClick={() => loadWeb3()}
+                className="px-6 py-2 bg-[#1199FA] hover:bg-[#0577DA] text-white text-sm font-medium rounded-lg transition-colors"
+              >
+                View all
               </button>
             </div>
-          )}
-        </section>
 
-        {/* Bottom CTA Section */}
-        <section className="mt-16 mb-8">
-          <div className="glass-card p-8 text-center relative overflow-hidden">
-            {/* Background gradient decoration */}
-            <div className="absolute inset-0 bg-gradient-to-r from-accent-blue/10 via-accent-purple/10 to-accent-cyan/10" />
-            <div className="absolute top-0 right-0 w-64 h-64 bg-accent-blue/20 rounded-full blur-3xl" />
-            <div className="absolute bottom-0 left-0 w-48 h-48 bg-accent-purple/20 rounded-full blur-3xl" />
-
-            <div className="relative z-10">
-              <h2 className="text-2xl font-bold text-text-primary mb-3">
-                Ready to start trading?
-              </h2>
-              <p className="text-text-secondary mb-6 max-w-lg mx-auto">
-                Connect your wallet and start trading on the outcomes of real-world events.
-                Earn rewards by predicting correctly.
-              </p>
-              <div className="flex items-center justify-center space-x-4">
-                <button className="btn-primary">
-                  Get Started
+            {/* Quick Actions */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-6">
+              {[
+                { name: "Trade", icon: "📈" },
+                { name: "Deposit", icon: "💰" },
+                { name: "Withdraw", icon: "💸" },
+                { name: "History", icon: "📋" },
+              ].map((action) => (
+                <button
+                  key={action.name}
+                  className="flex flex-col items-center justify-center p-4 bg-[#1F283C]/50 hover:bg-[#1F283C] rounded-xl transition-colors"
+                >
+                  <span className="text-2xl mb-2">{action.icon}</span>
+                  <span className="text-white text-sm font-medium">{action.name}</span>
                 </button>
-                <button className="btn-secondary">
-                  Learn More
-                </button>
-              </div>
+              ))}
             </div>
           </div>
-        </section>
+
+          {/* Earn Section */}
+          <div className="bg-[#0B1426] rounded-xl border border-[#1F283C] p-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+              <div>
+                <h3 className="text-white font-semibold text-lg">Earn</h3>
+                <p className="text-[#7B849B] text-sm mt-1">
+                  Securely grow your assets with fixed reward rates and regular payouts.
+                </p>
+              </div>
+              <button className="px-6 py-2 bg-[#1199FA] hover:bg-[#0577DA] text-white text-sm font-medium rounded-lg transition-colors">
+                View all
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              {[
+                { name: "Staking", rate: "Up to 12%", icon: "🔐" },
+                { name: "Liquidity", rate: "Up to 8%", icon: "💧" },
+                { name: "Lending", rate: "Up to 6%", icon: "🏦" },
+                { name: "Rewards", rate: "Up to 5%", icon: "🎁" },
+              ].map((earn) => (
+                <div
+                  key={earn.name}
+                  className="p-4 bg-[#1F283C]/50 rounded-xl"
+                >
+                  <span className="text-2xl">{earn.icon}</span>
+                  <p className="text-white font-medium mt-2">{earn.name}</p>
+                  <p className="text-[#00A68C] text-sm mt-1">{earn.rate}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-dark-700/50 py-8">
-        <div className="container-app">
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-            <div className="flex items-center space-x-3">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-accent-blue to-accent-cyan flex items-center justify-center">
-                <svg className="w-4 h-4 text-white" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
-                </svg>
-              </div>
-              <span className="text-text-primary font-semibold">PredictMarket</span>
+      <footer className="border-t border-[#1F283C] bg-[#0B1426] mt-12">
+        <div className="max-w-[1400px] mx-auto px-4 sm:px-6 py-12">
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-8">
+            {/* Logo Column */}
+            <div className="col-span-2">
+              <Link href="/" passHref>
+                <div className="flex items-center space-x-2 cursor-pointer">
+                  <div className="w-8 h-8 rounded-lg bg-[#1199FA] flex items-center justify-center">
+                    <svg className="w-5 h-5 text-white" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
+                    </svg>
+                  </div>
+                  <span className="text-white font-bold text-lg">PredictX</span>
+                </div>
+              </Link>
+              <p className="text-[#7B849B] text-sm mt-4 max-w-xs">
+                The leading prediction markets platform. Trade on the outcomes of real-world events.
+              </p>
             </div>
-            <div className="flex items-center space-x-6">
-              <a href="#" className="text-text-muted hover:text-text-primary transition-colors text-sm">
-                Terms
-              </a>
-              <a href="#" className="text-text-muted hover:text-text-primary transition-colors text-sm">
-                Privacy
-              </a>
-              <a href="#" className="text-text-muted hover:text-text-primary transition-colors text-sm">
-                Docs
-              </a>
-              <a href="#" className="text-text-muted hover:text-text-primary transition-colors text-sm">
-                Support
-              </a>
+
+            {/* Products */}
+            <div>
+              <h4 className="text-white font-semibold mb-4">Products</h4>
+              <ul className="space-y-3">
+                {["Markets", "Portfolio", "Leaderboard", "API"].map((item) => (
+                  <li key={item}>
+                    <Link href="#" passHref>
+                      <span className="text-[#7B849B] hover:text-white text-sm cursor-pointer transition-colors">
+                        {item}
+                      </span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
             </div>
-            <p className="text-text-muted text-sm">
-              &copy; 2024 PredictMarket. All rights reserved.
+
+            {/* Company */}
+            <div>
+              <h4 className="text-white font-semibold mb-4">Company</h4>
+              <ul className="space-y-3">
+                {["About", "Careers", "Blog", "Press"].map((item) => (
+                  <li key={item}>
+                    <Link href="#" passHref>
+                      <span className="text-[#7B849B] hover:text-white text-sm cursor-pointer transition-colors">
+                        {item}
+                      </span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            {/* Resources */}
+            <div>
+              <h4 className="text-white font-semibold mb-4">Resources</h4>
+              <ul className="space-y-3">
+                {["Documentation", "Help Center", "Community", "Status"].map((item) => (
+                  <li key={item}>
+                    <Link href="#" passHref>
+                      <span className="text-[#7B849B] hover:text-white text-sm cursor-pointer transition-colors">
+                        {item}
+                      </span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            {/* Legal */}
+            <div>
+              <h4 className="text-white font-semibold mb-4">Legal</h4>
+              <ul className="space-y-3">
+                {["Terms", "Privacy", "Cookies", "Licenses"].map((item) => (
+                  <li key={item}>
+                    <Link href="#" passHref>
+                      <span className="text-[#7B849B] hover:text-white text-sm cursor-pointer transition-colors">
+                        {item}
+                      </span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+
+          {/* Bottom Footer */}
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-8 mt-8 border-t border-[#1F283C]">
+            <p className="text-[#7B849B] text-sm">
+              &copy; 2024 PredictX. All rights reserved.
             </p>
+            <div className="flex items-center space-x-4">
+              {/* Social Icons */}
+              <a href="#" className="text-[#7B849B] hover:text-white transition-colors">
+                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+                </svg>
+              </a>
+              <a href="#" className="text-[#7B849B] hover:text-white transition-colors">
+                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M20.317 4.37a19.791 19.791 0 00-4.885-1.515.074.074 0 00-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 00-5.487 0 12.64 12.64 0 00-.617-1.25.077.077 0 00-.079-.037A19.736 19.736 0 003.677 4.37a.07.07 0 00-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 00.031.057 19.9 19.9 0 005.993 3.03.078.078 0 00.084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 00-.041-.106 13.107 13.107 0 01-1.872-.892.077.077 0 01-.008-.128 10.2 10.2 0 00.372-.292.074.074 0 01.077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 01.078.01c.12.098.246.198.373.292a.077.077 0 01-.006.127 12.299 12.299 0 01-1.873.892.077.077 0 00-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 00.084.028 19.839 19.839 0 006.002-3.03.077.077 0 00.032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 00-.031-.03z" />
+                </svg>
+              </a>
+              <a href="#" className="text-[#7B849B] hover:text-white transition-colors">
+                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                  <path fillRule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" clipRule="evenodd" />
+                </svg>
+              </a>
+              <a href="#" className="text-[#7B849B] hover:text-white transition-colors">
+                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M11.944 0A12 12 0 000 12a12 12 0 0012 12 12 12 0 0012-12A12 12 0 0012 0a12 12 0 00-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 01.171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z" />
+                </svg>
+              </a>
+            </div>
+            {/* Language Selector */}
+            <div className="flex items-center space-x-2 text-[#7B849B]">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
+              </svg>
+              <span className="text-sm">English</span>
+            </div>
           </div>
         </div>
       </footer>
