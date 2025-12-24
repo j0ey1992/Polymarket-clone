@@ -56,10 +56,10 @@ const ChartContainer: React.FC<Props> = ({ questionId }) => {
     var chartData = [yes, no];
 
     var layout = {
-      title: "YES / NO Graph",
+      title: { text: "YES / NO Graph" },
     };
 
-    Plotly.newPlot("myDiv", chartData, layout, { displayModeBar: false });
+    Plotly.newPlot("myDiv", chartData, layout as any, { displayModeBar: false });
   };
 
   useEffect(() => {

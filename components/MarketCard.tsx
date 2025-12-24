@@ -2,7 +2,15 @@ import Img from "next/image";
 import Link from "next/link";
 import React from "react";
 import Web3 from "web3";
-import { MarketProps } from "../pages";
+
+export interface MarketProps {
+  id: string;
+  title: string;
+  imageHash: string;
+  totalAmount: string;
+  totalYes: string;
+  totalNo: string;
+}
 
 export const MarketCard: React.FC<MarketProps> = ({
   id,

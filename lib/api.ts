@@ -192,4 +192,4 @@ export async function getExitValue(
   return fetchApi(`/positions/${userId}/${marketId}/${side}/exit-value`);
 }
 
-export { type Market, type OrderBook, type OrderBookLevel, type Position, type Order, type Quote, type SpreadConfig };
+export type { Market, OrderBook, OrderBookLevel, Position, Order, Quote, SpreadConfig };

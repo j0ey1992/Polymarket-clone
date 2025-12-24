@@ -1,12 +1,17 @@
 import moment from "moment";
+import dynamic from "next/dynamic";
 import Head from "next/head";
 import Img from "next/image";
 import { useRouter } from "next/router";
 import React, { useCallback, useEffect, useState } from "react";
 import Web3 from "web3";
-import ChartContainer from "../../components/Chart/ChartContainer";
 import Navbar from "../../components/Navbar";
 import { useData } from "../../contexts/DataContext";
+
+const ChartContainer = dynamic(
+  () => import("../../components/Chart/ChartContainer"),
+  { ssr: false }
+);
 
 export interface MarketProps {
   id: string;

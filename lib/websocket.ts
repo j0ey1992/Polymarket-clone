@@ -119,7 +119,7 @@ class WebSocketClient {
     }
   }
 
-  send(event: string, data: unknown): void {
+  send(event: string, data: Record<string, unknown>): void {
     if (this.socket?.readyState === WebSocket.OPEN) {
       this.socket.send(JSON.stringify({ type: event, ...data }));
     } else {
@@ -182,4 +182,4 @@ class WebSocketClient {
 // Singleton instance
 export const wsClient = new WebSocketClient();
 
-export { type PriceUpdate, type OrderUpdate };
+export type { PriceUpdate, OrderUpdate };
