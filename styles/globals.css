@@ -1,23 +1,345 @@
-html,
-body {
-  padding: 0;
-  margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Oxygen,
-    Ubuntu, Cantarell, Fira Sans, Droid Sans, Helvetica Neue, sans-serif;
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Base styles */
+@layer base {
+  html {
+    @apply scroll-smooth;
+    color-scheme: dark;
+  }
+
+  body {
+    @apply bg-dark-900 text-text-primary font-sans antialiased;
+    background-image:
+      radial-gradient(ellipse 80% 50% at 50% -20%, rgba(59, 130, 246, 0.15), transparent),
+      radial-gradient(ellipse 60% 40% at 80% 0%, rgba(139, 92, 246, 0.1), transparent);
+    background-attachment: fixed;
+  }
+
+  ::selection {
+    @apply bg-accent-blue/30 text-white;
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    @apply w-2 h-2;
+  }
+
+  ::-webkit-scrollbar-track {
+    @apply bg-dark-800;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-dark-600 rounded-full hover:bg-dark-500;
+  }
+
+  /* Input focus styles */
+  input:focus,
+  textarea:focus,
+  select:focus {
+    @apply outline-none ring-2 ring-accent-blue/50;
+  }
+
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
 }
 
-a {
-  color: inherit;
-  text-decoration: none;
+/* Component styles */
+@layer components {
+  /* Glass card effect */
+  .glass-card {
+    @apply bg-dark-800/80 backdrop-blur-xl border border-dark-600/50 rounded-xl shadow-card;
+    background-image: linear-gradient(135deg, rgba(255, 255, 255, 0.03) 0%, rgba(255, 255, 255, 0.01) 100%);
+  }
+
+  .glass-card-hover {
+    @apply glass-card transition-all duration-300 hover:border-accent-blue/30 hover:shadow-card-hover hover:bg-dark-750/90;
+  }
+
+  /* Gradient text */
+  .gradient-text {
+    @apply bg-gradient-to-r from-accent-blue via-accent-cyan to-accent-purple bg-clip-text text-transparent;
+  }
+
+  .gradient-text-success {
+    @apply bg-gradient-to-r from-success-light to-success bg-clip-text text-transparent;
+  }
+
+  .gradient-text-danger {
+    @apply bg-gradient-to-r from-danger-light to-danger bg-clip-text text-transparent;
+  }
+
+  /* Button styles */
+  .btn-primary {
+    @apply px-6 py-3 bg-accent-blue hover:bg-accent-blue/90 text-white font-semibold rounded-xl
+           transition-all duration-200 hover:shadow-glow active:scale-95;
+  }
+
+  .btn-secondary {
+    @apply px-6 py-3 bg-dark-700 hover:bg-dark-600 text-text-primary font-semibold rounded-xl
+           border border-dark-500 transition-all duration-200 hover:border-dark-400;
+  }
+
+  .btn-success {
+    @apply px-6 py-3 bg-success hover:bg-success-dark text-white font-semibold rounded-xl
+           transition-all duration-200 hover:shadow-glow-green active:scale-95;
+  }
+
+  .btn-danger {
+    @apply px-6 py-3 bg-danger hover:bg-danger-dark text-white font-semibold rounded-xl
+           transition-all duration-200 hover:shadow-glow-red active:scale-95;
+  }
+
+  .btn-ghost {
+    @apply px-4 py-2 bg-transparent hover:bg-dark-700/50 text-text-secondary hover:text-text-primary
+           font-medium rounded-lg transition-all duration-200;
+  }
+
+  /* Pill tabs */
+  .pill-tab {
+    @apply px-4 py-2 text-sm font-medium rounded-full transition-all duration-200 cursor-pointer;
+  }
+
+  .pill-tab-active {
+    @apply bg-accent-blue text-white shadow-glow;
+  }
+
+  .pill-tab-inactive {
+    @apply bg-dark-700/50 text-text-secondary hover:text-text-primary hover:bg-dark-600/50;
+  }
+
+  /* Input styles */
+  .input-dark {
+    @apply w-full px-4 py-3 bg-dark-800 border border-dark-600 rounded-xl text-text-primary
+           placeholder-text-muted focus:border-accent-blue/50 focus:ring-2 focus:ring-accent-blue/20
+           transition-all duration-200;
+  }
+
+  /* Card container */
+  .card-container {
+    @apply bg-dark-800/60 backdrop-blur-md border border-dark-600/30 rounded-2xl p-6;
+  }
+
+  /* Stats card */
+  .stats-card {
+    @apply flex flex-col space-y-1;
+  }
+
+  .stats-label {
+    @apply text-xs text-text-muted uppercase tracking-wider;
+  }
+
+  .stats-value {
+    @apply text-lg font-semibold text-text-primary;
+  }
+
+  /* Table styles */
+  .table-header {
+    @apply text-xs font-medium text-text-muted uppercase tracking-wider py-3 px-4;
+  }
+
+  .table-cell {
+    @apply py-4 px-4 text-text-primary;
+  }
+
+  .table-row {
+    @apply border-b border-dark-700/50 hover:bg-dark-750/50 transition-colors duration-150;
+  }
+
+  /* Badge styles */
+  .badge {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+  }
+
+  .badge-success {
+    @apply bg-success/20 text-success-light;
+  }
+
+  .badge-danger {
+    @apply bg-danger/20 text-danger-light;
+  }
+
+  .badge-warning {
+    @apply bg-warning/20 text-warning-light;
+  }
+
+  .badge-neutral {
+    @apply bg-dark-600 text-text-secondary;
+  }
+
+  /* Price change styles */
+  .price-up {
+    @apply text-success-light;
+  }
+
+  .price-down {
+    @apply text-danger-light;
+  }
+
+  /* Glow effects */
+  .glow-effect {
+    @apply relative;
+  }
+
+  .glow-effect::before {
+    content: '';
+    @apply absolute inset-0 rounded-xl opacity-0 transition-opacity duration-300;
+    background: linear-gradient(135deg, rgba(59, 130, 246, 0.2), rgba(139, 92, 246, 0.1));
+    filter: blur(20px);
+    z-index: -1;
+  }
+
+  .glow-effect:hover::before {
+    @apply opacity-100;
+  }
+
+  /* Shimmer loading effect */
+  .shimmer {
+    @apply relative overflow-hidden;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.05), transparent);
+    background-size: 200% 100%;
+    animation: shimmer 2s infinite;
+  }
+
+  /* Divider */
+  .divider {
+    @apply border-t border-dark-600/50;
+  }
+
+  /* Navigation link */
+  .nav-link {
+    @apply text-text-secondary hover:text-text-primary font-medium transition-colors duration-200;
+  }
+
+  .nav-link-active {
+    @apply text-text-primary;
+  }
+
+  /* Category card */
+  .category-card {
+    @apply glass-card p-5 min-w-[220px] flex-1;
+    background-image: linear-gradient(135deg, rgba(59, 130, 246, 0.08) 0%, rgba(139, 92, 246, 0.04) 100%);
+  }
+
+  /* Trend indicator */
+  .trend-item {
+    @apply flex items-center justify-between py-2.5;
+  }
+
+  .trend-item-icon {
+    @apply w-8 h-8 rounded-full flex items-center justify-center bg-dark-600;
+  }
 }
 
-* {
-  box-sizing: border-box;
+/* Utility classes */
+@layer utilities {
+  /* Text balance for better readability */
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  /* Hide scrollbar but keep functionality */
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Gradient borders */
+  .gradient-border {
+    @apply relative;
+  }
+
+  .gradient-border::before {
+    content: '';
+    @apply absolute inset-0 rounded-xl p-[1px];
+    background: linear-gradient(135deg, rgba(59, 130, 246, 0.5), rgba(139, 92, 246, 0.3));
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+  }
+
+  /* Responsive container */
+  .container-app {
+    @apply max-w-7xl mx-auto px-4 sm:px-6 lg:px-8;
+  }
+
+  /* Animation delays */
+  .animation-delay-100 {
+    animation-delay: 100ms;
+  }
+
+  .animation-delay-200 {
+    animation-delay: 200ms;
+  }
+
+  .animation-delay-300 {
+    animation-delay: 300ms;
+  }
+
+  .animation-delay-400 {
+    animation-delay: 400ms;
+  }
 }
 
+/* Custom animations */
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+@keyframes glow-pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+/* Chart container dark theme */
+.js-plotly-plot .plotly .modebar {
+  background: rgba(17, 24, 39, 0.8) !important;
+}
+
+.js-plotly-plot .plotly .modebar-btn path {
+  fill: #94a3b8 !important;
+}
+
+.js-plotly-plot .plotly .modebar-btn:hover path {
+  fill: #f8fafc !important;
+}
+
+/* Fix for responsive width */
 @media (min-width: 640px) {
   .w-fixed {
-      flex: 0 1 230px;
-      min-width: 230px;
+    flex: 0 1 230px;
+    min-width: 230px;
   }
 }
