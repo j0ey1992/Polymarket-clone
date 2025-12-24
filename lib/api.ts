@@ -135,10 +135,30 @@ export async function placeOrder(order: {
   side: 'BUY' | 'SELL';
   outcome: 'YES' | 'NO';
   size: number;
+  signature?: string; // EIP-712 signature for verification
 }): Promise<Order> {
   return fetchApi('/orders', {
     method: 'POST',
     body: JSON.stringify(order),
+  });
+}
+
+// Balance API
+export async function getUserBalance(userId: string): Promise<{ walletBalance: number; tradingBalance: number; lockedBalance?: number }> {
+  return fetchApi(`/balance/${userId}`);
+}
+
+export async function depositToTradingBalance(userId: string, amount: number): Promise<{ tradingBalance: number; lockedBalance: number }> {
+  return fetchApi(`/balance/${userId}/deposit`, {
+    method: 'POST',
+    body: JSON.stringify({ amount }),
+  });
+}
+
+export async function withdrawFromTradingBalance(userId: string, amount: number): Promise<{ tradingBalance: number; lockedBalance: number }> {
+  return fetchApi(`/balance/${userId}/withdraw`, {
+    method: 'POST',
+    body: JSON.stringify({ amount }),
   });
 }
 

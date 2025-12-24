@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, Prisma } from '@prisma/client';
 import { EventEmitter } from 'events';
 import { gammaClient } from '../polymarket/GammaClient';
 import { PositionManagerService } from './PositionManagerService';
@@ -11,6 +11,7 @@ export class SettlementService extends EventEmitter {
   private prisma: PrismaClient;
   private positionManager: PositionManagerService;
   private checkInterval: NodeJS.Timeout | null = null;
+  private payoutProcessingInterval: NodeJS.Timeout | null = null;
 
   constructor(prisma: PrismaClient, positionManager: PositionManagerService) {
     super();
@@ -29,6 +30,11 @@ export class SettlementService extends EventEmitter {
       await this.checkForResolutions();
     }, 60000);
 
+    // Process pending payouts every 30 seconds
+    this.payoutProcessingInterval = setInterval(async () => {
+      await this.processPendingPayouts();
+    }, 30000);
+
     console.log('Settlement service started');
   }
 
@@ -39,6 +45,10 @@ export class SettlementService extends EventEmitter {
     if (this.checkInterval) {
       clearInterval(this.checkInterval);
       this.checkInterval = null;
+    }
+    if (this.payoutProcessingInterval) {
+      clearInterval(this.payoutProcessingInterval);
+      this.payoutProcessingInterval = null;
     }
     console.log('Settlement service stopped');
   }
@@ -160,21 +170,159 @@ export class SettlementService extends EventEmitter {
   }
 
   /**
-   * Record payouts in the database
+   * Record payouts in the database and queue for processing
    */
   private async recordPayouts(marketId: string, payouts: UserPayout[]): Promise<void> {
-    // In a production system, this would:
-    // 1. Queue payouts for processing
-    // 2. Call the Cronos smart contract to release funds
-    // 3. Record the transaction hashes
-
-    // For now, just log the payouts
     for (const payout of payouts) {
+      // Create payout record
+      await this.prisma.payout.create({
+        data: {
+          userId: payout.userId,
+          marketId,
+          amount: new Prisma.Decimal(payout.amount),
+          positionSize: new Prisma.Decimal(payout.positionSize),
+          status: 'PENDING',
+        },
+      });
+
       console.log(
-        `Payout for user ${payout.userId}: $${payout.amount.toFixed(2)} ` +
+        `Payout queued for user ${payout.userId}: $${payout.amount.toFixed(2)} ` +
           `(${payout.positionSize} shares)`
       );
     }
+
+    // Immediately process payouts
+    await this.processPendingPayouts();
+  }
+
+  /**
+   * Process pending payouts - credit user balances
+   */
+  async processPendingPayouts(): Promise<void> {
+    const pendingPayouts = await this.prisma.payout.findMany({
+      where: { status: 'PENDING' },
+      take: 50, // Process in batches
+    });
+
+    for (const payout of pendingPayouts) {
+      try {
+        // Mark as processing
+        await this.prisma.payout.update({
+          where: { id: payout.id },
+          data: { status: 'PROCESSING' },
+        });
+
+        // Credit user's trading balance
+        await this.creditUserBalance(payout.userId, Number(payout.amount));
+
+        // Mark as completed
+        await this.prisma.payout.update({
+          where: { id: payout.id },
+          data: {
+            status: 'COMPLETED',
+            processedAt: new Date(),
+          },
+        });
+
+        console.log(`Payout completed for user ${payout.userId}: $${payout.amount}`);
+        this.emit('payoutCompleted', {
+          userId: payout.userId,
+          amount: Number(payout.amount),
+          marketId: payout.marketId,
+        });
+      } catch (error) {
+        console.error(`Failed to process payout ${payout.id}:`, error);
+        await this.prisma.payout.update({
+          where: { id: payout.id },
+          data: {
+            status: 'FAILED',
+            error: error instanceof Error ? error.message : 'Unknown error',
+          },
+        });
+      }
+    }
+  }
+
+  /**
+   * Credit user's trading balance
+   */
+  private async creditUserBalance(userId: string, amount: number): Promise<void> {
+    // Upsert balance record
+    await this.prisma.balance.upsert({
+      where: { userId },
+      create: {
+        userId,
+        tradingBalance: new Prisma.Decimal(amount),
+        lockedBalance: new Prisma.Decimal(0),
+      },
+      update: {
+        tradingBalance: {
+          increment: new Prisma.Decimal(amount),
+        },
+      },
+    });
+  }
+
+  /**
+   * Get user's current trading balance
+   */
+  async getUserBalance(userId: string): Promise<{ tradingBalance: number; lockedBalance: number }> {
+    const balance = await this.prisma.balance.findUnique({
+      where: { userId },
+    });
+
+    return {
+      tradingBalance: balance ? Number(balance.tradingBalance) : 0,
+      lockedBalance: balance ? Number(balance.lockedBalance) : 0,
+    };
+  }
+
+  /**
+   * Lock balance for an order
+   */
+  async lockBalance(userId: string, amount: number): Promise<boolean> {
+    const balance = await this.prisma.balance.findUnique({
+      where: { userId },
+    });
+
+    if (!balance || Number(balance.tradingBalance) < amount) {
+      return false;
+    }
+
+    await this.prisma.balance.update({
+      where: { userId },
+      data: {
+        tradingBalance: { decrement: new Prisma.Decimal(amount) },
+        lockedBalance: { increment: new Prisma.Decimal(amount) },
+      },
+    });
+
+    return true;
+  }
+
+  /**
+   * Release locked balance (order cancelled or failed)
+   */
+  async releaseLockedBalance(userId: string, amount: number): Promise<void> {
+    await this.prisma.balance.update({
+      where: { userId },
+      data: {
+        tradingBalance: { increment: new Prisma.Decimal(amount) },
+        lockedBalance: { decrement: new Prisma.Decimal(amount) },
+      },
+    });
+  }
+
+  /**
+   * Consume locked balance (order filled)
+   */
+  async consumeLockedBalance(userId: string, amount: number): Promise<void> {
+    await this.prisma.balance.update({
+      where: { userId },
+      data: {
+        lockedBalance: { decrement: new Prisma.Decimal(amount) },
+      },
+    });
   }
 
   /**
@@ -220,15 +368,59 @@ export class SettlementService extends EventEmitter {
     userId: string
   ): Promise<
     Array<{
+      id: string;
       marketId: string;
-      outcome: string;
       amount: number;
-      claimed: boolean;
+      status: string;
+      createdAt: Date;
     }>
   > {
-    // In a production system, this would query a payouts table
-    // For now, return empty array as payouts are instant
-    return [];
+    const payouts = await this.prisma.payout.findMany({
+      where: {
+        userId,
+        status: { in: ['PENDING', 'PROCESSING'] },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return payouts.map((p) => ({
+      id: p.id,
+      marketId: p.marketId,
+      amount: Number(p.amount),
+      status: p.status,
+      createdAt: p.createdAt,
+    }));
+  }
+
+  /**
+   * Get all payouts for a user
+   */
+  async getUserPayoutHistory(
+    userId: string
+  ): Promise<
+    Array<{
+      id: string;
+      marketId: string;
+      amount: number;
+      status: string;
+      createdAt: Date;
+      processedAt: Date | null;
+    }>
+  > {
+    const payouts = await this.prisma.payout.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+    });
+
+    return payouts.map((p) => ({
+      id: p.id,
+      marketId: p.marketId,
+      amount: Number(p.amount),
+      status: p.status,
+      createdAt: p.createdAt,
+      processedAt: p.processedAt,
+    }));
   }
 
   /**
@@ -259,7 +451,50 @@ export class SettlementService extends EventEmitter {
    * Get total unrealized payouts across all resolved markets
    */
   async getTotalUnclaimedPayouts(): Promise<number> {
-    // In a production system with delayed claims
-    return 0;
+    const result = await this.prisma.payout.aggregate({
+      where: { status: { in: ['PENDING', 'PROCESSING'] } },
+      _sum: { amount: true },
+    });
+
+    return result._sum.amount ? Number(result._sum.amount) : 0;
+  }
+
+  /**
+   * Deposit funds to user's trading balance
+   */
+  async depositToBalance(userId: string, amount: number): Promise<void> {
+    await this.prisma.balance.upsert({
+      where: { userId },
+      create: {
+        userId,
+        tradingBalance: new Prisma.Decimal(amount),
+        lockedBalance: new Prisma.Decimal(0),
+      },
+      update: {
+        tradingBalance: { increment: new Prisma.Decimal(amount) },
+      },
+    });
+  }
+
+  /**
+   * Withdraw funds from user's trading balance
+   */
+  async withdrawFromBalance(userId: string, amount: number): Promise<boolean> {
+    const balance = await this.prisma.balance.findUnique({
+      where: { userId },
+    });
+
+    if (!balance || Number(balance.tradingBalance) < amount) {
+      return false;
+    }
+
+    await this.prisma.balance.update({
+      where: { userId },
+      data: {
+        tradingBalance: { decrement: new Prisma.Decimal(amount) },
+      },
+    });
+
+    return true;
   }
 }

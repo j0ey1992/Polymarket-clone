@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, Prisma } from '@prisma/client';
 import { EventEmitter } from 'events';
 import { clobClient, Side } from '../polymarket/ClobClient';
 import { spreadCalculator } from './SpreadCalculatorService';
@@ -53,6 +53,14 @@ export class OrderRouterService extends EventEmitter {
       request.side
     );
 
+    // Lock balance for BUY orders
+    if (request.side === 'BUY') {
+      const locked = await this.lockBalance(request.userId, request.size);
+      if (!locked) {
+        throw new Error('Failed to lock balance for order');
+      }
+    }
+
     // Create order record
     const order = await this.prisma.order.create({
       data: {
@@ -74,6 +82,54 @@ export class OrderRouterService extends EventEmitter {
     this.emit('orderCreated', this.toOrder(order));
 
     return this.toOrder(order);
+  }
+
+  /**
+   * Lock balance for an order
+   */
+  private async lockBalance(userId: string, amount: number): Promise<boolean> {
+    const balance = await this.prisma.balance.findUnique({
+      where: { userId },
+    });
+
+    if (!balance || Number(balance.tradingBalance) < amount) {
+      return false;
+    }
+
+    await this.prisma.balance.update({
+      where: { userId },
+      data: {
+        tradingBalance: { decrement: new Prisma.Decimal(amount) },
+        lockedBalance: { increment: new Prisma.Decimal(amount) },
+      },
+    });
+
+    return true;
+  }
+
+  /**
+   * Release locked balance (order cancelled or failed)
+   */
+  private async releaseLockedBalance(userId: string, amount: number): Promise<void> {
+    await this.prisma.balance.update({
+      where: { userId },
+      data: {
+        tradingBalance: { increment: new Prisma.Decimal(amount) },
+        lockedBalance: { decrement: new Prisma.Decimal(amount) },
+      },
+    });
+  }
+
+  /**
+   * Consume locked balance (order filled)
+   */
+  private async consumeLockedBalance(userId: string, amount: number): Promise<void> {
+    await this.prisma.balance.update({
+      where: { userId },
+      data: {
+        lockedBalance: { decrement: new Prisma.Decimal(amount) },
+      },
+    });
   }
 
   /**
@@ -135,6 +191,11 @@ export class OrderRouterService extends EventEmitter {
       },
     });
 
+    // Consume locked balance for BUY orders (funds are now converted to shares)
+    if (order.side === 'BUY') {
+      await this.consumeLockedBalance(order.userId, Number(order.size));
+    }
+
     // Record spread profit
     await this.recordSpreadProfit(order);
 
@@ -172,10 +233,15 @@ export class OrderRouterService extends EventEmitter {
    * Handle a failed order
    */
   private async handleOrderFailed(orderId: string, error: unknown): Promise<void> {
-    await this.prisma.order.update({
+    const order = await this.prisma.order.update({
       where: { id: orderId },
       data: { status: 'FAILED' },
     });
+
+    // Release locked balance for BUY orders that failed
+    if (order.side === 'BUY') {
+      await this.releaseLockedBalance(order.userId, Number(order.size));
+    }
 
     this.emit('orderFailed', { orderId, error });
     console.error(`Order ${orderId} failed:`, error);
@@ -252,6 +318,11 @@ export class OrderRouterService extends EventEmitter {
       where: { id: orderId },
       data: { status: 'CANCELLED' },
     });
+
+    // Release locked balance for BUY orders
+    if (order.side === 'BUY') {
+      await this.releaseLockedBalance(order.userId, Number(order.size));
+    }
 
     // Stop polling
     this.stopOrderPolling(orderId);
@@ -440,6 +511,17 @@ export class OrderRouterService extends EventEmitter {
 
     if (!user) {
       throw new Error('User not found');
+    }
+
+    // For BUY orders, check if user has sufficient balance
+    if (request.side === 'BUY') {
+      const balance = await this.prisma.balance.findUnique({
+        where: { userId: request.userId },
+      });
+
+      if (!balance || Number(balance.tradingBalance) < request.size) {
+        throw new Error('Insufficient balance for buy order');
+      }
     }
 
     // For SELL orders, check if user has sufficient position

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import Link from 'next/link';
 import { useData } from '../contexts/DataContext';
 import SpreadIndicator from './SpreadIndicator';
 import { getQuote, placeOrder, Quote } from '../lib/api';
@@ -18,7 +19,7 @@ const TradePanel: React.FC<TradePanelProps> = ({
   noPrice,
   onTradeComplete,
 }) => {
-  const { account } = useData();
+  const { account, treasuryBalance, signOrder, refreshBalances } = useData();
   const [side, setSide] = useState<'BUY' | 'SELL'>('BUY');
   const [outcome, setOutcome] = useState<'YES' | 'NO'>('YES');
   const [amount, setAmount] = useState<string>('');
@@ -30,6 +31,8 @@ const TradePanel: React.FC<TradePanelProps> = ({
 
   const currentPrice = outcome === 'YES' ? yesPrice : noPrice;
   const amountNum = parseFloat(amount) || 0;
+  const balance = parseFloat(treasuryBalance) || 0;
+  const insufficientBalance = side === 'BUY' && amountNum > balance;
 
   useEffect(() => {
     if (amountNum <= 0) {
@@ -82,28 +85,49 @@ const TradePanel: React.FC<TradePanelProps> = ({
       return;
     }
 
+    if (insufficientBalance) {
+      setError('Insufficient balance. Please deposit more USDC.');
+      return;
+    }
+
     setLoading(true);
     setError(null);
     setSuccess(null);
 
     try {
-      const order = await placeOrder({
-        userId: account,
+      // Sign the order for verification
+      const signature = await signOrder({
         marketId,
         side,
         outcome,
         size: amountNum,
       });
 
+      if (!signature) {
+        setError('Failed to sign order. Please try again.');
+        setLoading(false);
+        return;
+      }
+
+      const order = await placeOrder({
+        userId: account,
+        marketId,
+        side,
+        outcome,
+        size: amountNum,
+        signature,
+      });
+
       setSuccess(`Order placed! ID: ${order.id.slice(0, 8)}...`);
       setAmount('');
+      refreshBalances();
       onTradeComplete?.();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to place order');
     } finally {
       setLoading(false);
     }
-  }, [account, amountNum, marketId, side, outcome, onTradeComplete]);
+  }, [account, amountNum, marketId, side, outcome, onTradeComplete, signOrder, refreshBalances, insufficientBalance]);
 
   const formatPrice = (price: number) => (price * 100).toFixed(1) + '¢';
 
@@ -128,6 +152,23 @@ const TradePanel: React.FC<TradePanelProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Balance Display */}
+      {account && (
+        <div className="px-5 py-3 border-b border-white/5 bg-dark-100/30">
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-dark-500">Trading Balance</span>
+            <div className="flex items-center space-x-2">
+              <span className="text-sm font-bold text-white number-display">${treasuryBalance}</span>
+              <Link href="/portfolio" passHref>
+                <button className="text-2xs text-kris-400 hover:text-kris-300 transition-colors">
+                  + Deposit
+                </button>
+              </Link>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Side Toggle */}
       <div className="p-5 border-b border-white/5">
@@ -227,7 +268,9 @@ const TradePanel: React.FC<TradePanelProps> = ({
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
             placeholder="0.00"
-            className="w-full py-4 px-5 pr-24 text-xl font-bold text-white glass-input rounded-xl placeholder-dark-500"
+            className={`w-full py-4 px-5 pr-24 text-xl font-bold text-white glass-input rounded-xl placeholder-dark-500 ${
+              insufficientBalance ? 'border-bear/50 focus:border-bear' : ''
+            }`}
           />
           <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center space-x-3">
             <span className="text-dark-500 text-sm font-medium">
@@ -235,12 +278,20 @@ const TradePanel: React.FC<TradePanelProps> = ({
             </span>
             <button
               className="px-3 py-1.5 rounded-lg bg-kris-500/20 text-kris-300 text-xs font-semibold hover:bg-kris-500/30 transition-colors duration-200"
-              onClick={() => setAmount('100')}
+              onClick={() => setAmount(side === 'BUY' ? treasuryBalance : '100')}
             >
               Max
             </button>
           </div>
         </div>
+        {insufficientBalance && (
+          <p className="text-bear-light text-xs mt-2 flex items-center space-x-1">
+            <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+            </svg>
+            <span>Insufficient balance. Need ${(amountNum - balance).toFixed(2)} more.</span>
+          </p>
+        )}
         {/* Quick amount buttons */}
         <div className="flex space-x-2 mt-3">
           {['10', '25', '50', '100'].map((val) => (
@@ -349,9 +400,9 @@ const TradePanel: React.FC<TradePanelProps> = ({
       <div className="p-5">
         <button
           onClick={handleTrade}
-          disabled={loading || amountNum <= 0 || !account}
+          disabled={loading || amountNum <= 0 || !account || insufficientBalance}
           className={`w-full py-4 rounded-xl font-bold text-white transition-all duration-200 relative overflow-hidden ${
-            loading || amountNum <= 0 || !account
+            loading || amountNum <= 0 || !account || insufficientBalance
               ? 'bg-dark-300 cursor-not-allowed opacity-50'
               : side === 'BUY'
               ? 'btn-gradient btn-bull'
@@ -364,10 +415,12 @@ const TradePanel: React.FC<TradePanelProps> = ({
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
               </svg>
-              <span>Processing...</span>
+              <span>Signing & Processing...</span>
             </div>
           ) : !account ? (
             'Connect Wallet'
+          ) : insufficientBalance ? (
+            'Insufficient Balance'
           ) : (
             `${side === 'BUY' ? 'Buy' : 'Sell'} ${outcome}`
           )}
@@ -377,7 +430,7 @@ const TradePanel: React.FC<TradePanelProps> = ({
       {/* Disclaimer */}
       <div className="px-5 pb-5">
         <p className="text-2xs text-dark-500 text-center">
-          Trading involves risk. Platform takes a small spread on each trade.
+          Orders are signed with your wallet for verification. Platform takes a 2% spread.
         </p>
       </div>
     </div>
